@@ -517,11 +517,18 @@ lwip_close(int s)
     LWIP_ASSERT("sock->lastdata == NULL", sock->lastdata == NULL);
   }
 
-  netconn_delete(sock->conn);
+  int result = netconn_delete(sock->conn);
 
   free_socket(sock, is_tcp);
-  set_errno(0);
-  return 0;
+
+  #if TCP_CLOSE_ALWAYS_RETURNS
+    set_errno(result);
+    return result;
+  #else
+    (result);
+    set_errno(0);
+    return 0;
+  #endif
 }
 
 int
@@ -1743,7 +1750,7 @@ lwip_getsockopt(int s, int level, int optname, void *optval, socklen_t *optlen)
   LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).optlen = optlen;
   LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).err = err;
   tcpip_callback(lwip_getsockopt_internal, &LWIP_SETGETSOCKOPT_DATA_VAR_REF(data));
-  sys_arch_sem_wait(&sock->conn->op_completed, 0);
+  conn_op_wait(sock->conn);
   /* maybe lwip_getsockopt_internal has changed err */
   err = LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).err;
   LWIP_SETGETSOCKOPT_DATA_VAR_FREE(data);
@@ -1767,6 +1774,7 @@ lwip_getsockopt_internal(void *arg)
 
   data = (struct lwip_setgetsockopt_data*)arg;
   sock = data->sock;
+  conn_mark_op_started(sock->conn);
 #ifdef LWIP_DEBUG
   s = data->s;
 #endif /* LWIP_DEBUG */
@@ -1993,7 +2001,7 @@ lwip_getsockopt_internal(void *arg)
     LWIP_ASSERT("unhandled level", 0);
     break;
   } /* switch (level) */
-  sys_sem_signal(&sock->conn->op_completed);
+  conn_op_completed(sock->conn);
 }
 
 int
@@ -2254,7 +2262,7 @@ lwip_setsockopt(int s, int level, int optname, const void *optval, socklen_t opt
   LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).optlen = &optlen;
   LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).err = err;
   tcpip_callback(lwip_setsockopt_internal, &LWIP_SETGETSOCKOPT_DATA_VAR_REF(data));
-  sys_arch_sem_wait(&sock->conn->op_completed, 0);
+  conn_op_wait(sock->conn);
   /* maybe lwip_setsockopt_internal has changed err */
   err = LWIP_SETGETSOCKOPT_DATA_VAR_REF(data).err;
   LWIP_SETGETSOCKOPT_DATA_VAR_FREE(data);
@@ -2278,6 +2286,7 @@ lwip_setsockopt_internal(void *arg)
 
   data = (struct lwip_setgetsockopt_data*)arg;
   sock = data->sock;
+  conn_mark_op_started(sock->conn);
 #ifdef LWIP_DEBUG
   s = data->s;
 #endif /* LWIP_DEBUG */
@@ -2510,7 +2519,7 @@ lwip_setsockopt_internal(void *arg)
     LWIP_ASSERT("unhandled level", 0);
     break;
   }  /* switch (level) */
-  sys_sem_signal(&sock->conn->op_completed);
+  conn_op_completed(sock->conn);
 }
 
 int

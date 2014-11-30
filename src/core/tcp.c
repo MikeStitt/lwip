@@ -1078,9 +1078,16 @@ tcp_slowtmr_start:
         LWIP_ASSERT("tcp_slowtmr: first pcb == tcp_tw_pcbs", tcp_tw_pcbs == pcb);
         tcp_tw_pcbs = pcb->next;
       }
+      #if LWIP_PCB_COMPLETED_BOOKKEEPING
+        tcp_err_fn err_fn = pcb->errf;
+        void *err_arg = pcb->callback_arg;
+      #endif
       pcb2 = pcb;
       pcb = pcb->next;
       memp_free(MEMP_TCP_PCB, pcb2);
+      #if LWIP_PCB_COMPLETED_BOOKKEEPING
+        TCP_EVENT_ERR(err_fn, err_arg, ERR_ABRT);
+      #endif
     } else {
       prev = pcb;
       pcb = pcb->next;

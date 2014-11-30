@@ -397,8 +397,27 @@ err_tcp(void *arg, err_t err)
       conn->current_msg->err = err;
       conn->current_msg = NULL;
       /* wake up the waiting task */
-      sys_sem_signal(&conn->op_completed);
+      conn_op_completed(conn);
     }
+#if LWIP_PCB_COMPLETED_BOOKKEEPING
+    else if (conn->to_be_completed) {
+      SET_NONBLOCKING_CONNECT(conn, 0);
+      /* set error return code */
+      LWIP_ASSERT("conn->current_msg != NULL", conn->current_msg != NULL);
+      conn->current_msg->err = err;
+      conn->current_msg = NULL;
+      /* wake up the waiting task */
+      conn_op_completed(conn);
+    }
+  } else if (conn->to_be_completed) {
+    SET_NONBLOCKING_CONNECT(conn, 0);
+    /* set error return code */
+    LWIP_ASSERT("conn->current_msg != NULL", conn->current_msg != NULL);
+    conn->current_msg->err = err;
+    conn->current_msg = NULL;
+    /* wake up the waiting task */
+    conn_op_completed(conn);
+#endif
   } else {
     LWIP_ASSERT("conn->current_msg == NULL", conn->current_msg == NULL);
   }
@@ -788,9 +807,10 @@ lwip_netconn_do_close_internal(struct netconn *conn)
   } else {
     err = tcp_shutdown(conn->pcb.tcp, shut_rx, shut_tx);
   }
-  if (err == ERR_OK) {
+  if ((TCP_CLOSE_ALWAYS_RETURNS)||(err == ERR_OK)) {
+
     /* Closing succeeded */
-    conn->current_msg->err = ERR_OK;
+    conn->current_msg->err = err;
     conn->current_msg = NULL;
     conn->state = NETCONN_NONE;
     if (close) {
@@ -807,7 +827,7 @@ lwip_netconn_do_close_internal(struct netconn *conn)
       API_EVENT(conn, NETCONN_EVT_SENDPLUS, 0);
     }
     /* wake up the application task */
-    sys_sem_signal(&conn->op_completed);
+    conn_op_completed(conn);
   } else {
     /* Closing failed, restore some of the callbacks */
     /* Closing of listen pcb will never fail! */
@@ -885,7 +905,7 @@ lwip_netconn_do_delconn(struct api_msg_msg *msg)
     API_EVENT(msg->conn, NETCONN_EVT_SENDPLUS, 0);
   }
   if (sys_sem_valid(&msg->conn->op_completed)) {
-    sys_sem_signal(&msg->conn->op_completed);
+    conn_op_completed(msg->conn);
   }
 }
 
@@ -969,7 +989,7 @@ lwip_netconn_do_connected(void *arg, struct tcp_pcb *pcb, err_t err)
   API_EVENT(conn, NETCONN_EVT_SENDPLUS, 0);
 
   if (was_blocking) {
-    sys_sem_signal(&conn->op_completed);
+    conn_op_completed(conn);
   }
   return ERR_OK;
 }
@@ -990,7 +1010,7 @@ lwip_netconn_do_connect(struct api_msg_msg *msg)
     msg->err = ERR_CLSD;
     if (NETCONNTYPE_GROUP(msg->conn->type) == NETCONN_TCP) {
       /* For TCP, netconn_connect() calls tcpip_apimsg(), so signal op_completed here. */
-      sys_sem_signal(&msg->conn->op_completed);
+      conn_op_completed(msg->conn);
       return;
     }
   } else {
@@ -1029,7 +1049,7 @@ lwip_netconn_do_connect(struct api_msg_msg *msg)
         }
       }
       /* For TCP, netconn_connect() calls tcpip_apimsg(), so signal op_completed here. */
-      sys_sem_signal(&msg->conn->op_completed);
+      conn_op_completed(msg->conn);
       return;
 #endif /* LWIP_TCP */
     default:
@@ -1354,7 +1374,7 @@ err_mem:
     if ((conn->flags & NETCONN_FLAG_WRITE_DELAYED) != 0)
 #endif
     {
-      sys_sem_signal(&conn->op_completed);
+      conn_op_completed(conn);
     }
   }
 #if LWIP_TCPIP_CORE_LOCKING
@@ -1395,7 +1415,7 @@ lwip_netconn_do_write(struct api_msg_msg *msg)
         if (lwip_netconn_do_writemore(msg->conn) != ERR_OK) {
           LWIP_ASSERT("state!", msg->conn->state == NETCONN_WRITE);
           UNLOCK_TCPIP_CORE();
-          sys_arch_sem_wait(&msg->conn->op_completed, 0);
+          conn_op_wait(msg->conn);
           LOCK_TCPIP_CORE();
           LWIP_ASSERT("state!", msg->conn->state == NETCONN_NONE);
         }
@@ -1521,7 +1541,7 @@ lwip_netconn_do_close(struct api_msg_msg *msg)
   {
     msg->err = ERR_VAL;
   }
-  sys_sem_signal(&msg->conn->op_completed);
+  conn_op_completed(msg->conn);
 }
 
 #if LWIP_IGMP || (LWIP_IPV6 && LWIP_IPV6_MLD)

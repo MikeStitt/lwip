@@ -133,6 +133,13 @@ tcp_send_fin(struct tcp_pcb *pcb)
     for (last_unsent = pcb->unsent; last_unsent->next != NULL;
          last_unsent = last_unsent->next);
 
+    #if TCP_DO_NOT_ADD_FIN_TO_RST
+      if ((TCPH_FLAGS(last_unsent->tcphdr) & (TCP_RST)) != 0) {
+        /* already TCP_RST don't try to add a TCP_FIN */
+        return ERR_OK;
+      }
+    #endif
+
     if ((TCPH_FLAGS(last_unsent->tcphdr) & (TCP_SYN | TCP_FIN | TCP_RST)) == 0) {
       /* no SYN/FIN/RST flag in the header, we can add the FIN flag */
       TCPH_SET_FLAG(last_unsent->tcphdr, TCP_FIN);

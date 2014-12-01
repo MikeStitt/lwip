@@ -55,6 +55,51 @@ extern "C" {
 #define LWIP_TCPIP_THREAD_ALIVE()
 #endif
 
+static inline void conn_op_wait(struct netconn *conn)
+{
+  sys_arch_sem_wait(&conn->op_completed, 0);
+  #if LWIP_PCB_COMPLETED_BOOKKEEPING
+    LWIP_ASSERT("!conn->to_be_completed", !conn->to_be_completed);
+  #endif
+}
+
+static inline void conn_mark_op_initial(struct netconn *conn)
+{
+  #if LWIP_PCB_COMPLETED_BOOKKEEPING
+    conn->to_be_completed = 0;
+  #endif
+}
+
+static inline void conn_mark_op_started(struct netconn *conn)
+{
+  #if LWIP_PCB_COMPLETED_BOOKKEEPING
+    LWIP_ASSERT("!conn->to_be_completed", !conn->to_be_completed);
+    conn->to_be_completed = 1;
+  #endif
+}
+
+static inline void conn_mark_op_completed(struct netconn *conn)
+{
+  #if LWIP_PCB_COMPLETED_BOOKKEEPING
+    LWIP_ASSERT("conn->to_be_completed", conn->to_be_completed);
+    conn->to_be_completed = 0;
+  #endif
+}
+
+static inline void conn_op_completed(struct netconn *conn)
+{
+  conn_mark_op_completed(conn);
+  sys_sem_signal(&conn->op_completed);
+}
+
+static inline void tcpip_apimsg_ack_fn(struct api_msg_msg *msg)
+{
+  conn_mark_op_completed(msg->conn);
+  #if !LWIP_TCPIP_CORE_LOCKING
+    sys_sem_signal(&msg->conn->op_completed);
+  #endif
+}
+
 #if LWIP_TCPIP_CORE_LOCKING
 /** The global semaphore to lock the stack. */
 extern sys_mutex_t lock_tcpip_core;
@@ -75,7 +120,7 @@ extern sys_mutex_t lock_tcpip_core;
   TCPIP_APIMSG_NOERR(m,f); \
   (e) = (m)->msg.err; \
 } while(0)
-#define TCPIP_APIMSG_ACK(m)
+#define TCPIP_APIMSG_ACK(m)   tcpip_apimsg_ack_fn(m)
 #define TCPIP_NETIFAPI(m)     tcpip_netifapi_lock(m)
 #define TCPIP_NETIFAPI_ACK(m)
 #define TCPIP_PPPAPI(m)       tcpip_pppapi_lock(m)
@@ -85,7 +130,7 @@ extern sys_mutex_t lock_tcpip_core;
 #define UNLOCK_TCPIP_CORE()
 #define TCPIP_APIMSG_NOERR(m,f) do { (m)->function = f; tcpip_apimsg(m); } while(0)
 #define TCPIP_APIMSG(m,f,e)   do { (m)->function = f; (e) = tcpip_apimsg(m); } while(0)
-#define TCPIP_APIMSG_ACK(m)   sys_sem_signal(&m->conn->op_completed)
+#define TCPIP_APIMSG_ACK(m)   tcpip_apimsg_ack_fn(m)
 #define TCPIP_NETIFAPI(m)     tcpip_netifapi(m)
 #define TCPIP_NETIFAPI_ACK(m) sys_sem_signal(&m->sem)
 #define TCPIP_PPPAPI(m)       tcpip_pppapi(m)

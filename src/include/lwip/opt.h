@@ -2731,4 +2731,31 @@
 #define IP6_DEBUG                       LWIP_DBG_OFF
 #endif
 
+/**
+ * TCP_CLOSE_ALWAYS_RETURNS==1: To force lwip_close and lwip_shutdown
+ * to always return. Otherwise lwIP can be deadlocked when it can not allocate
+ * the buffer space for the FIN to end a message.
+ */
+#ifndef TCP_CLOSE_ALWAYS_RETURNS
+#define TCP_CLOSE_ALWAYS_RETURNS 1
+#endif
+
+/**
+ * TCP_DO_NOT_ADD_FIN_TO_RST==1: When trying to close a connection, if
+ * we have already set the RST flag don't expend the effort to try to allocate
+ * a segment to add a RST. Just hang up quietly.
+ */
+#ifndef TCP_DO_NOT_ADD_FIN_TO_RST
+#define TCP_DO_NOT_ADD_FIN_TO_RST 1
+#endif
+
+/**
+ * LWIP should keep track of calling threads that are waiting on
+ * a call back and return an error to threads that are waiting when the
+ * pcb is purged.
+ */
+#ifndef LWIP_PCB_COMPLETED_BOOKKEEPING
+#define LWIP_PCB_COMPLETED_BOOKKEEPING 1
+#endif
+
 #endif /* LWIP_HDR_OPT_H */

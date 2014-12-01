@@ -81,6 +81,7 @@ netconn_new_with_proto_and_callback(enum netconn_type t, u8_t proto, netconn_cal
     err_t err;
     API_MSG_VAR_ALLOC_DONTFAIL(msg);
     API_MSG_VAR_REF(msg).msg.msg.n.proto = proto;
+    conn_mark_op_initial(conn);
     API_MSG_VAR_REF(msg).msg.conn = conn;
     TCPIP_APIMSG(&API_MSG_VAR_REF(msg), lwip_netconn_do_newconn, err);
     API_MSG_VAR_FREE(msg);
